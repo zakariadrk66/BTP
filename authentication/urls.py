@@ -11,5 +11,7 @@ urlpatterns = [
     path('disable-2fa/', views.disable_2fa, name='disable_2fa'),
     path('check-2fa-status/', views.check_2fa_status, name='check_2fa_status'),
     path('protected/', protected_view, name='protected'),
+    path('setup-email-2fa/', views.setup_email_2fa, name='setup_email_2fa'),
+    path('verify-email-2fa/', views.verify_email_2fa, name='verify_email_2fa'),
 
 ]

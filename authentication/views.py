@@ -14,6 +14,9 @@ from .models import CustomUser
 from .token_serializers import CustomTokenObtainPairSerializer
 import json 
 from rest_framework import serializers
+from django.core.mail import send_mail
+from django.conf import settings
+from datetime import datetime
 
 @api_view(['POST'])
 @permission_classes([AllowAny])
@@ -27,46 +30,48 @@ def register(request):
 @api_view(['POST'])
 @permission_classes([AllowAny])
 def login(request):
-    # Use the custom serializer to handle login
-    serializer = CustomTokenObtainPairSerializer(data=request.data)
-    try:
-        serializer.is_valid(raise_exception=True)
-        result = serializer.validated_data
+    serializer = UserLoginSerializer(data=request.data)
+    if serializer.is_valid():
+        user = serializer.validated_data['user']
         
-        # Check if 2FA is required
-        if 'message' in result and result['message'] == '2FA required':
+        # Check if user has 2FA enabled
+        if user.is_2fa_enabled:
+            # Generate and send 2FA code via email
+            otp_code = user.generate_email_2fa_code()
+            
+            # Send email with OTP (you'll need to configure email settings)
+            try:
+                send_mail(
+                    'Your 2FA Code',
+                    f'Your 2FA code is: {otp_code}',
+                    settings.DEFAULT_FROM_EMAIL,
+                    [user.email],
+                    fail_silently=False,
+                )
+            except:
+                return Response({'error': 'Failed to send 2FA email'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            
             return Response({
-                'message': '2FA required',
-                'user_id': result['user_id']
+                'message': '2FA code sent to email',
+                'user_id': user.id
             }, status=status.HTTP_202_ACCEPTED)
         
-        return Response(result, status=status.HTTP_200_OK)
-    except serializers.ValidationError:
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        # If no 2FA, generate JWT tokens
+        refresh = RefreshToken.for_user(user)
+        return Response({
+            'refresh': str(refresh),
+            'access': str(refresh.access_token),
+        }, status=status.HTTP_200_OK)
+    
+    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     
 @api_view(['POST'])
-def setup_2fa(request):
+def setup_email_2fa(request):
     user = request.user
-    device, created = TOTPDevice.objects.get_or_create(user=user, name="default")
-    
-    if not device.confirmed:
-        # Generate QR code
-        qr_url = device.config_url
-        qr = qrcode.QRCode(version=1, box_size=10, border=5)
-        qr.add_data(qr_url)
-        qr.make(fit=True)
-        
-        img = qr.make_image(fill='black', back_color='white')
-        buffer = BytesIO()
-        img.save(buffer, format='PNG')
-        qr_code = base64.b64encode(buffer.getvalue()).decode()
-        
-        return Response({
-            'qr_code': qr_code,
-            'secret_key': device.key
-        })
-    else:
-        return Response({'message': '2FA already set up'}, status=status.HTTP_400_BAD_REQUEST)
+    user.is_2fa_enabled = True
+    user.save()
+    return Response({'message': 'Email 2FA enabled'}, status=status.HTTP_200_OK)
+
 
 @api_view(['POST'])
 def verify_2fa_setup(request):
@@ -121,14 +126,52 @@ def verify_2fa_login(request):
         return Response({'error': 'Invalid token'}, status=status.HTTP_400_BAD_REQUEST)
 
 @api_view(['POST'])
+@permission_classes([AllowAny])
+def verify_email_2fa(request):
+    """Verify 2FA code sent to email during login"""
+    user_id = request.data.get('user_id')
+    otp_code = request.data.get('otp_code')
+    
+    try:
+        user = CustomUser.objects.get(id=user_id)
+    except CustomUser.DoesNotExist:
+        return Response({'error': 'User not found'}, status=status.HTTP_404_NOT_FOUND)
+    
+    # Check if the code is correct and not expired
+    if (user.email_2fa_code == otp_code and 
+        user.email_2fa_expires and 
+        user.email_2fa_expires > datetime.now()):
+        
+        # Clear the code after successful verification
+        user.email_2fa_code = None
+        user.email_2fa_expires = None
+        user.save()
+        
+        # Generate JWT tokens after successful 2FA
+        refresh = RefreshToken.for_user(user)
+        return Response({
+            'refresh': str(refresh),
+            'access': str(refresh.access_token),
+        }, status=status.HTTP_200_OK)
+    else:
+        return Response({'error': 'Invalid or expired OTP code'}, status=status.HTTP_400_BAD_REQUEST)
+
+@api_view(['POST'])
 def disable_2fa(request):
     user = request.user
-    device = user.totpdevice_set.first()
-    if device:
-        device.delete()
-        user.is_2fa_enabled = False
-        user.save()
+    user.is_2fa_enabled = False
+    user.email_2fa_code = None
+    user.email_2fa_expires = None
+    user.save()
     return Response({'message': '2FA disabled successfully'})
+
+@api_view(['GET'])
+def check_2fa_status(request):
+    """Check if current user has 2FA enabled"""
+    user = request.user
+    return Response({
+        'is_2fa_enabled': user.is_2fa_enabled
+    })
 
 @api_view(['GET'])
 def check_2fa_status(request):
