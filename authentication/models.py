@@ -25,10 +25,10 @@ class CustomUser(AbstractUser):
     email_2fa_code = models.CharField(max_length=6, null=True, blank=True)
     email_2fa_expires = models.DateTimeField(null=True, blank=True)
     
-    USERNAME_FIELD = 'email'  # Use email to log in
-    REQUIRED_FIELDS = []  # Required fields besides email and password
+    USERNAME_FIELD = 'email' 
+    REQUIRED_FIELDS = []  
     
-    objects = CustomUserManager()  # Use our custom manager
+    objects = CustomUserManager() 
     
     def __str__(self):
         return self.email
