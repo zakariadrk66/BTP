@@ -412,3 +412,4 @@ class GoodsReceipt(models.Model):
         verbose_name_plural = "Goods Receipts"
         ordering = ['-delivery_date']
 
+        

@@ -34,6 +34,7 @@ INSTALLED_APPS = [
     'achat',
 ]
 
+# In your settings.py, temporarily modify the middleware to exclude API paths
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
@@ -43,7 +44,6 @@ MIDDLEWARE = [
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
     'authentication.middleware.TwoFactorAuthMiddleware',
-
 ]
 
 ROOT_URLCONF = 'backend.urls'
