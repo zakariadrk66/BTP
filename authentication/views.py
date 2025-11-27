@@ -16,7 +16,7 @@ import json
 from rest_framework import serializers
 from django.core.mail import send_mail
 from django.conf import settings
-from datetime import datetime
+from django.utils import timezone
 
 @api_view(['POST'])
 @permission_classes([AllowAny])
@@ -131,30 +131,36 @@ def verify_email_2fa(request):
     """Verify 2FA code sent to email during login"""
     user_id = request.data.get('user_id')
     otp_code = request.data.get('otp_code')
-    
+
+    if not user_id or not otp_code:
+        return Response({'error': 'user_id and otp_code are required'}, status=status.HTTP_400_BAD_REQUEST)
+
     try:
         user = CustomUser.objects.get(id=user_id)
     except CustomUser.DoesNotExist:
         return Response({'error': 'User not found'}, status=status.HTTP_404_NOT_FOUND)
-    
-    # Check if the code is correct and not expired
-    if (user.email_2fa_code == otp_code and 
-        user.email_2fa_expires and 
-        user.email_2fa_expires > datetime.now()):
-        
-        # Clear the code after successful verification
-        user.email_2fa_code = None
-        user.email_2fa_expires = None
-        user.save()
-        
-        # Generate JWT tokens after successful 2FA
-        refresh = RefreshToken.for_user(user)
-        return Response({
-            'refresh': str(refresh),
-            'access': str(refresh.access_token),
-        }, status=status.HTTP_200_OK)
-    else:
-        return Response({'error': 'Invalid or expired OTP code'}, status=status.HTTP_400_BAD_REQUEST)
+
+    # Check if the code is correct and not expired (use timezone-aware now)
+    try:
+        if (user.email_2fa_code == otp_code and
+            user.email_2fa_expires and
+            user.email_2fa_expires > timezone.now()):
+
+            # Clear the code after successful verification
+            user.email_2fa_code = None
+            user.email_2fa_expires = None
+            user.save()
+
+            # Generate JWT tokens after successful 2FA
+            refresh = RefreshToken.for_user(user)
+            return Response({
+                'refresh': str(refresh),
+                'access': str(refresh.access_token),
+            }, status=status.HTTP_200_OK)
+        else:
+            return Response({'error': 'Invalid or expired OTP code'}, status=status.HTTP_400_BAD_REQUEST)
+    except Exception as e:
+        return Response({'error': 'Server error during OTP verification', 'detail': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 @api_view(['POST'])
 def disable_2fa(request):

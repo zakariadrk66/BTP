@@ -37,6 +37,7 @@ class CustomUser(AbstractUser):
         import random
         code = str(random.randint(100000, 999999))
         self.email_2fa_code = code
-        self.email_2fa_expires = datetime.now() + timedelta(minutes=5)  # Code expires in 5 minutes
+        # Use timezone-aware now() for consistency with Django settings
+        self.email_2fa_expires = timezone.now() + timedelta(minutes=5)  # Code expires in 5 minutes
         self.save()
         return code
